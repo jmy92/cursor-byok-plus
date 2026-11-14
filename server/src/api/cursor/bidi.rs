@@ -160,18 +160,17 @@ pub fn decode(request: &ai::BidiAppendRequest) -> Result<DecodedAppend> {
         .map(|id| id.request_id.as_str())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| Error::Protocol("BidiAppend request_id is required".into()))?;
-    if !request.data_binary.is_empty() {
-        return Err(Error::Protocol(
-            "BidiAppend data_binary is not part of the captured protocol".into(),
-        ));
-    }
-    if request.data.is_empty() {
-        return Err(Error::Protocol(
-            "BidiAppend contains no AgentClientMessage".into(),
-        ));
-    }
-    let payload = hex::decode(&request.data)
-        .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))?;
+    let payload = if !request.data_binary.is_empty() {
+        request.data_binary.clone()
+    } else {
+        if request.data.is_empty() {
+            return Err(Error::Protocol(
+                "BidiAppend contains no AgentClientMessage".into(),
+            ));
+        }
+        hex::decode(&request.data)
+            .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))?
+    };
     Ok(DecodedAppend {
         request_id: request_id.into(),
         seqno: request.append_seqno,

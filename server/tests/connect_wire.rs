@@ -138,3 +138,26 @@ async fn bidi_append_gzip_body_is_decompressed_before_protobuf_decode() {
     assert!(text.contains("BidiAppend contains no AgentClientMessage"));
     assert!(!text.contains("protobuf decode error"));
 }
+
+#[test]
+fn bidi_append_decodes_binary_agent_client_message_payload() {
+    let message = pb::AgentClientMessage {
+        message: Some(pb::agent_client_message::Message::ClientHeartbeat(
+            pb::ClientHeartbeat {},
+        )),
+    };
+    let request = ai::BidiAppendRequest {
+        request_id: Some(ai::BidiRequestId {
+            request_id: "binary-request".into(),
+        }),
+        data_binary: message.encode_to_vec(),
+        ..Default::default()
+    };
+
+    let decoded = cursor::bidi::decode(&request).unwrap();
+    assert_eq!(decoded.request_id, "binary-request");
+    assert!(matches!(
+        decoded.message.message,
+        Some(pb::agent_client_message::Message::ClientHeartbeat(_))
+    ));
+}
