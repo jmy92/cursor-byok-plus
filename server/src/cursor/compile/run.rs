@@ -431,11 +431,7 @@ fn action(request: &pb::AgentRunRequest) -> Result<ActionProjection> {
             } else {
                 user.mode
             };
-            if user.message_id.is_empty() {
-                return Err(Error::Protocol(
-                    "Cursor user message action has no message_id".into(),
-                ));
-            }
+            let message_id = break_messages::user_message_id(user, mode);
             if user.text.trim() == "/summarize" {
                 return Ok(ActionProjection {
                     mode,
@@ -461,10 +457,12 @@ fn action(request: &pb::AgentRunRequest) -> Result<ActionProjection> {
                     .filter(|text| !text.is_empty())
                     .cloned(),
             );
-            let input_id = format!("cursor:user:{}", user.message_id);
+            let input_id = format!("cursor:user:{message_id}");
+            let mut turn_user = user.clone();
+            turn_user.message_id = message_id;
             Ok(ActionProjection {
                 mode,
-                turn_user: Some(user.clone()),
+                turn_user: Some(turn_user),
                 action_context: context.join("\n\n"),
                 event_id: None,
                 input_id: Some(input_id),

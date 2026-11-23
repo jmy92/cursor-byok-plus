@@ -22,6 +22,24 @@ pub(crate) enum RuntimeAction {
     UserMessage(pb::UserMessageAction),
 }
 
+/// Cursor 3.31+ omits `message_id` on some user messages (subagent kickoffs,
+/// queued follow-ups). Returns the id Cursor supplied, or derives a stable id
+/// from the resolved mode and message content so the same message always maps
+/// to the same id.
+pub(crate) fn user_message_id(user: &pb::UserMessage, mode: i32) -> String {
+    if !user.message_id.is_empty() {
+        return user.message_id.clone();
+    }
+    let seed = format!(
+        "{mode}\0{}\0{}\0{}\0{}",
+        user.rich_text.as_deref().unwrap_or_default(),
+        user.text,
+        user.selected_context.is_some(),
+        user.subagent_system_reminder.is_none(),
+    );
+    format!("auto:{}", BlobId::digest(seed.as_bytes()).to_base64())
+}
+
 pub(crate) async fn compile_user_message_action(
     action: &pb::UserMessageAction,
     current_mode: i32,
@@ -32,16 +50,12 @@ pub(crate) async fn compile_user_message_action(
         .user_message
         .as_ref()
         .ok_or_else(|| Error::Protocol("Cursor user message action has no UserMessage".into()))?;
-    if user.message_id.is_empty() {
-        return Err(Error::Protocol(
-            "Cursor user message action has no message_id".into(),
-        ));
-    }
     let mode = if user.mode == pb::AgentMode::Unspecified as i32 {
         current_mode
     } else {
         user.mode
     };
+    let message_id = user_message_id(user, mode);
     let mut action_context = action
         .prepend_user_messages
         .iter()
@@ -57,7 +71,7 @@ pub(crate) async fn compile_user_message_action(
     );
     let empty_context = pb::RequestContext::default();
     compile(
-        format!("user-message:{}", user.message_id),
+        format!("user-message:{message_id}"),
         super::run::mode_from_proto(mode)?,
         user,
         action.request_context.as_ref().unwrap_or(&empty_context),
@@ -388,5 +402,44 @@ impl Time {
             timestamp: format!("{} ({utc})", now.format("%A, %b %-d, %Y, %-I:%M %p")),
             today: now.format("%A %b %-d,\n%Y").to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user_message(text: &str) -> pb::UserMessage {
+        pb::UserMessage {
+            text: text.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn keeps_the_message_id_cursor_supplied() {
+        let user = pb::UserMessage {
+            message_id: "cursor-1".into(),
+            ..user_message("hello")
+        };
+        assert_eq!(user_message_id(&user, 1), "cursor-1");
+    }
+
+    #[test]
+    fn derives_a_stable_id_for_the_same_content_and_mode() {
+        let first = user_message_id(&user_message("kick off subagent"), 2);
+        let second = user_message_id(&user_message("kick off subagent"), 2);
+        assert!(first.starts_with("auto:"));
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn derives_different_ids_for_different_content_or_mode() {
+        let by_text = user_message_id(&user_message("first"), 1);
+        assert_ne!(by_text, user_message_id(&user_message("second"), 1));
+        assert_ne!(by_text, user_message_id(&user_message("first"), 2));
+        let mut selected = user_message("first");
+        selected.selected_context = Some(pb::SelectedContext::default());
+        assert_ne!(by_text, user_message_id(&selected, 1));
     }
 }
