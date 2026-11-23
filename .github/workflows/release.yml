@@ -143,7 +143,26 @@ jobs:
           projectPath: apps/desktop
           tagName: v__VERSION__
           releaseName: Cursor BYOK v__VERSION__
-          releaseBody: ${{ contains(needs.prepare.outputs.version, '-') && 'Beta release. Download the installer for your platform from the assets below.' || 'Download the installer for your platform from the assets below.' }}
+          releaseBody: |
+            社区维护版（jmy92/cursor-byok-plus），本版本聚焦 **Cursor 3.31 兼容性修复**。
+
+            ### 兼容修复
+
+            - **传输门控钉死**：改写 BootstrapStatsig 响应，关闭 WebSocket 传输与客户端本地 agent 循环，保持 hex 上行格式——Cursor 3.29+/3.31+ 继续走网关已实现的 RunSSE/BidiAppend 链路，官方账号与自定义模型可并存
+            - **BidiAppend 二进制解码**：接受 3.31 的 `data_binary` 原始 protobuf 载荷，旧版 hex 路径兜底
+            - **message_id 派生**：3.31 的 subagent kickoff / 排队追问消息不带 id 时，从内容派生稳定 ID，不再拒绝
+
+            ### 使用说明
+
+            - 按平台下载：Windows（NSIS 安装包）/ macOS（dmg，Apple Silicon 与 Intel）/ Linux（AppImage、deb）
+            - macOS 未做公证签名，首次打开请右键 → 打开
+            - 应用内自动更新指向本仓库，签名公钥已更换；旧版安装更新仍指向官方仓库，互不影响
+
+            ### 实测与反馈
+
+            Windows + Cursor 3.30.8：对话、工具调用正常。3.31 兼容修复已按 3.31 协议适配，遇到问题欢迎提 Issue（请附 Cursor 版本、模型类型与请求协议）。
+
+            **Full Changelog**: https://github.com/jmy92/cursor-byok-plus/compare/31e9f5c...v${{ needs.prepare.outputs.version }}
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
