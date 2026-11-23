@@ -17,7 +17,7 @@ use cursor_server::{
     api::cursor,
     cursor::prompting::{PromptAssets, PromptCompiler},
     cursor::protocol::{
-        connect,
+        connect, events,
         proto::{agent::v1 as pb, aiserver::v1 as ai},
     },
     cursor::transport::TransportRegistry,
@@ -137,4 +137,96 @@ async fn bidi_append_gzip_body_is_decompressed_before_protobuf_decode() {
     let text = std::str::from_utf8(&body).unwrap();
     assert!(text.contains("BidiAppend contains no AgentClientMessage"));
     assert!(!text.contains("protobuf decode error"));
+}
+
+fn heartbeat_client_message() -> pb::AgentClientMessage {
+    pb::AgentClientMessage {
+        message: Some(pb::agent_client_message::Message::ClientHeartbeat(
+            pb::ClientHeartbeat::default(),
+        )),
+    }
+}
+
+#[test]
+fn bidi_append_binary_and_hex_payloads_decode_identically() {
+    let message = heartbeat_client_message();
+    let binary = message.encode_to_vec();
+    let from_binary = cursor::bidi::decode(&ai::BidiAppendRequest {
+        request_id: Some(ai::BidiRequestId {
+            request_id: "req".into(),
+        }),
+        data_binary: binary.clone(),
+        ..Default::default()
+    })
+    .unwrap();
+    let from_hex = cursor::bidi::decode(&ai::BidiAppendRequest {
+        request_id: Some(ai::BidiRequestId {
+            request_id: "req".into(),
+        }),
+        data: hex::encode(&binary),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(from_binary.message.encode_to_vec(), binary);
+    assert_eq!(from_hex.message.encode_to_vec(), binary);
+}
+
+#[test]
+fn bidi_append_prefers_binary_when_both_payloads_are_set() {
+    let decoded = cursor::bidi::decode(&ai::BidiAppendRequest {
+        request_id: Some(ai::BidiRequestId {
+            request_id: "req".into(),
+        }),
+        data: "not-hex".into(),
+        data_binary: heartbeat_client_message().encode_to_vec(),
+        ..Default::default()
+    })
+    .unwrap();
+    assert!(matches!(
+        decoded.message.message,
+        Some(pb::agent_client_message::Message::ClientHeartbeat(_))
+    ));
+}
+
+#[tokio::test]
+async fn bidi_append_routes_binary_agent_messages() {
+    let (_directory, store) = fixtures::temp_store().await;
+    let assets = PromptAssets::load(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("prompt/cursor")
+            .as_path(),
+    )
+    .unwrap();
+    let clients = NetworkClients::new(store.clone());
+    let registry = TransportRegistry::new(
+        store,
+        Arc::new(fake_provider::FakeProvider::default()),
+        PromptCompiler::new(assets),
+    );
+    let handle = registry.get_or_create("binary-request").await.unwrap();
+    let wire = ai::BidiAppendRequest {
+        request_id: Some(ai::BidiRequestId {
+            request_id: "binary-request".into(),
+        }),
+        data_binary: heartbeat_client_message().encode_to_vec(),
+        ..Default::default()
+    }
+    .encode_to_vec();
+
+    let response = cursor::router(registry, clients)
+        .unwrap()
+        .oneshot(
+            Request::post("/aiserver.v1.BidiService/BidiAppend")
+                .header(header::CONTENT_TYPE, "application/proto")
+                .body(Body::from(wire))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut output = handle.subscribe();
+    let frame = output.recv().await.expect("heartbeat frame was emitted");
+    let expected = connect::encode_message(&events::heartbeat()).unwrap();
+    assert_eq!(frame, expected);
 }
