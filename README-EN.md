@@ -1,21 +1,17 @@
 English | [简体中文](./README.md)
 
-## 👋Is Cursor getting too heavy?  ✨ **New from the same author** → [BaoCode](https://github.com/baocode-dev/baocode) — an awesome desktop GUI for Claude Code: polished, ultra-small, ultra-light.
-
 <div align="center">
 
 # cursor-byok
 cursor-byok is a local implementation of Cursor's backend.
 <br>
 <br>
-<a href="https://trendshift.io/repositories/39260?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-39260" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/39260" alt="leookun/cursor-byok | Trendshift" width="250" height="55" /></a>
+[Official User Guide](https://docs.leokun.cn) · [Download](https://github.com/jmy92/cursor-byok-plus/releases/latest) · [Report an Issue](https://github.com/jmy92/cursor-byok-plus/issues) · [中文版本说明](./README.md)
 
-[User Guide](https://docs.leokun.cn) · [Download](https://github.com/leookun/cursor-byok/releases/latest) · [Report an Issue](https://github.com/leookun/cursor-byok/issues) · [中文版本说明](./README.md)
-
-[![Release](https://img.shields.io/github/v/release/leookun/cursor-byok?style=flat-square)](https://github.com/leookun/cursor-byok/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/leookun/cursor-byok/total?style=flat-square)](https://github.com/leookun/cursor-byok/releases)
-[![License](https://img.shields.io/github/license/leookun/cursor-byok?style=flat-square)](./LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/leookun/cursor-byok/releases/latest)
+[![Release](https://img.shields.io/github/v/release/jmy92/cursor-byok-plus?style=flat-square)](https://github.com/jmy92/cursor-byok-plus/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jmy92/cursor-byok-plus/total?style=flat-square)](https://github.com/jmy92/cursor-byok-plus/releases)
+[![License](https://img.shields.io/github/license/jmy92/cursor-byok-plus?style=flat-square)](./LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/jmy92/cursor-byok-plus/releases/latest)
 
 
 
@@ -30,6 +26,8 @@ cursor-byok is a local implementation of Cursor's backend.
 cursor-byok is an open-source local model gateway for Cursor. It runs a service on your machine that connects Cursor to the model APIs you configure, routes model requests through your own providers, and preserves Cursor Agent capabilities such as tool calling, Skills, and MCP.
 
 You can connect OpenAI- and Anthropic-compatible services, customize endpoints, model IDs, API keys, and request parameters, and use model channels beyond the options built into the platform.
+
+This repository is a community-maintained fork of [leookun/cursor-byok](https://github.com/leookun/cursor-byok) that keeps up with Cursor protocol changes and ships compatibility fixes (such as the 3.31 WebSocket transport and binary protocol). The project is actively maintained and continuously updated. Issues and suggestions are welcome!
 
 > [!IMPORTANT]
 > cursor-byok is free and open source, but the model APIs you connect may charge for usage. This is an independent project and is not affiliated with or endorsed by Cursor or its developers.
@@ -46,11 +44,10 @@ You can connect OpenAI- and Anthropic-compatible services, customize endpoints, 
 
 ## Quick Start
 
-1. Download the latest build for your platform from [GitHub Releases](https://github.com/leookun/cursor-byok/releases/latest).
+1. Download the latest build for your platform from [GitHub Releases](https://github.com/jmy92/cursor-byok-plus/releases/latest).
 2. Launch cursor-byok, open **Model Settings**, and enter the endpoint, API key, and model ID.
 3. Test the model configuration. Once it passes, return to the dashboard and start the service.
-4. Test the model configuration. Once it passes, return to the dashboard and start the service.
-5. After upgrading Cursor or configuring a model for the first time, quit Cursor completely and restart it, then start a new conversation and select the configured model.
+4. After upgrading Cursor or configuring a model for the first time, quit Cursor completely and restart it, then start a new conversation and select the configured model.
 
 For complete installation steps, system configuration, and Frequently Asked Questions, see the [User Guide](https://docs.leokun.cn).
 
@@ -84,22 +81,20 @@ cursor-byok is built to return model choice to the user. Developers can make ful
 
 ## Roadmap
 
-The project will continue to improve model compatibility, Agent tooling, local runtime stability, and the self-hosting experience while exploring support for more IDE, chat, and Agent workflows.
-
-See the [release roadmap](https://github.com/leookun/cursor-byok/discussions/32) for plans and progress.
+This fork keeps up with Cursor protocol changes, ships compatibility fixes in time, and merges upstream improvements as needed.
 
 ## Community and Support
 
-- [User Guide](https://docs.leokun.cn)
-- [GitHub Issues](https://github.com/leookun/cursor-byok/issues)
-- [Telegram community](https://t.me/cursor_byok)
-- QQ groups: `1095916242`, `1094411438`, `1095918002`, `1094419321`
+- [Official User Guide](https://docs.leokun.cn)
+- [GitHub Issues](https://github.com/jmy92/cursor-byok-plus/issues)
+
+The project is actively maintained and continuously updated. Issues and suggestions are welcome!
 
 
 
 ## Development and Contributing
 
-Issues and pull requests are welcome. See the [Contributing Guide](./CONTRIBUTING_EN.md) for prerequisites, build commands, project structure, and contribution guidelines.
+Issues and pull requests are welcome. Before submitting code, run `make check` to confirm formatting, tests, and the frontend build pass.
 
 ## Contributors
 

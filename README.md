@@ -1,19 +1,17 @@
 简体中文 | [English](./README-EN.md)
 
-## 👋 受够了Cursor的性能？ ✨ **同作者新作** → [Baocode](https://github.com/baocode-dev/baocode) —— 为 Claude Code 打造的精致的桌面 GUI，超小尺寸，超低占用
-
 <div align="center">
 
 # cursor-byok
 
 cursor-byok 是一个运行在本机的 Cursor 模型网关，帮助你在 Cursor 中使用自己配置的模型服务。
 
-[English README](./README-EN.md) · [使用指南](https://docs.leokun.cn) · [下载](https://github.com/leookun/cursor-byok/releases/latest) · [提交问题](https://github.com/leookun/cursor-byok/issues)
+[官方使用指南](https://docs.leokun.cn) · [下载](https://github.com/jmy92/cursor-byok-plus/releases/latest) · [提交问题](https://github.com/jmy92/cursor-byok-plus/issues)
 
-[![Release](https://img.shields.io/github/v/release/leookun/cursor-byok?style=flat-square)](https://github.com/leookun/cursor-byok/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/leookun/cursor-byok/total?style=flat-square)](https://github.com/leookun/cursor-byok/releases)
-[![License](https://img.shields.io/github/license/leookun/cursor-byok?style=flat-square)](./LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/leookun/cursor-byok/releases/latest)
+[![Release](https://img.shields.io/github/v/release/jmy92/cursor-byok-plus?style=flat-square)](https://github.com/jmy92/cursor-byok-plus/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jmy92/cursor-byok-plus/total?style=flat-square)](https://github.com/jmy92/cursor-byok-plus/releases)
+[![License](https://img.shields.io/github/license/jmy92/cursor-byok-plus?style=flat-square)](./LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/jmy92/cursor-byok-plus/releases/latest)
 
 </div>
 
@@ -24,6 +22,8 @@ cursor-byok 是一个运行在本机的 Cursor 模型网关，帮助你在 Curso
 ## 项目简介
 
 cursor-byok 是一个开源的本地模型网关。它在你的设备上运行服务，接收 Cursor 发出的 Agent 请求，将请求转发到你配置的模型服务，并尽可能保留 Cursor Agent 的工具调用、Skills、MCP 和多轮对话能力。
+
+本仓库是 [leookun/cursor-byok](https://github.com/leookun/cursor-byok) 的社区维护分支，持续跟进 Cursor 新版本的协议变化，及时修复兼容性问题（如 3.31 的 WebSocket 传输与二进制协议），项目持续更新维护，欢迎提交 Issue 和改进建议。
 
 你可以连接兼容 OpenAI 或 Anthropic 协议的服务，自定义服务地址、模型 ID、API Key 和请求参数，也可以使用 Cursor 平台默认选项之外的模型通道。
 
@@ -43,7 +43,7 @@ cursor-byok 是一个开源的本地模型网关。它在你的设备上运行�
 
 ## 快速开始
 
-1. 从 [GitHub Releases](https://github.com/leookun/cursor-byok/releases/latest) 下载适合你操作系统的最新版本。
+1. 从 [GitHub Releases](https://github.com/jmy92/cursor-byok-plus/releases/latest) 下载适合你操作系统的最新版本。
 2. 启动 cursor-byok，打开 **Cursor 配置**，按提示初始化本地 CA（证书颁发机构）。
 3. 在模型设置中添加模型，填写服务地址、API Key 和模型名称，然后保存并运行 **测试**。
 4. 确认测试通过后，保持 cursor-byok 运行。
@@ -127,7 +127,7 @@ cursor-byok/
 │   ├── desktop/
 │   │   ├── src/
 │   │   │   ├── features/ # 首页、模型、调用记录与设置
-│   │   │   ├── shell/    # 窗口框架、页面布局与广告外壳
+│   │   │   ├── shell/    # 窗口框架与页面布局
 │   │   │   ├── shared/   # UI、虚拟列表、状态、API 与平台能力
 │   │   │   ├── i18n/     # 本地化运行时与语言目录
 │   │   │   └── styles/   # 全局主题与排版令牌
@@ -205,16 +205,14 @@ make build-docker    # 构建 Docker 镜像
 
 ## 路线图
 
-项目将继续改进模型兼容性、Agent 工具、本地运行稳定性和自托管体验，并探索支持更多 IDE、聊天和 Agent 工作流。
-
-计划与进展请参阅[发布路线图](https://github.com/leookun/cursor-byok/discussions/32)。
+本分支将持续跟进 Cursor 新版本的协议变化，及时修复兼容性问题，并按需合入上游改进。
 
 ## 社区与反馈
 
-- [中文使用指南](https://docs.leokun.cn/zh/docs)
-- [GitHub Issues](https://github.com/leookun/cursor-byok/issues)
-- [Telegram 社区](https://t.me/cursor_byok)
-- QQ 群：`1095916242`、`1094411438`、`1095918002`、`1094419321`
+- [官方使用指南](https://docs.leokun.cn/zh/docs)
+- [GitHub Issues](https://github.com/jmy92/cursor-byok-plus/issues)
+
+项目持续更新维护，欢迎提交 Issue 和改进建议。
 
 提交问题时，请附上操作系统、cursor-byok 版本、模型类型、请求协议、已脱敏的服务地址、错误信息和复现步骤。请勿公开 API Key 或其他凭据。
 
