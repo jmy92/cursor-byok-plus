@@ -15,8 +15,6 @@ cursor-byok 是一个运行在本机的 Cursor 模型网关，帮助你在 Curso
 
 </div>
 
-![将 cursor-byok 连接到多种模型 API](./images/en-brand-1.png)
-
 ![cursor-byok 控制面板](./images/en-home-1.png)
 
 ## 项目简介
