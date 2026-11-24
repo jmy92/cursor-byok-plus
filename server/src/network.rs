@@ -1,20 +1,50 @@
 //! Owns reusable outbound HTTP clients configured from persisted proxy settings.
+//!
+//! Outbound requests resolve to one of two routes: a primary route derived from
+//! the proxy settings, and — after a connection-level failure — a fallback route
+//! that stays active for [`FALLBACK_ROUTE_TTL`] before the primary is probed again.
 
 use std::{sync::Arc, time::Duration};
 
 use tokio::sync::RwLock;
 
 use crate::{
-    store::{ProxySettingsSecret, Store},
+    store::{ProxyMode, ProxySettingsSecret, Store},
     Error, Result,
 };
 
 const LOCAL_NO_PROXY: &str = "localhost,127.0.0.0/8,::1";
 
+/// How long a fallback route stays active before the primary route is probed again.
+const FALLBACK_ROUTE_TTL: Duration = Duration::from_secs(600);
+
+/// A concrete outbound proxy endpoint with optional basic auth.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProxyRoute {
+    address: String,
+    auth_enabled: bool,
+    username: String,
+    password: String,
+}
+
+/// The route outbound requests currently take.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OutboundRoute {
+    Direct,
+    Proxy(ProxyRoute),
+}
+
+#[derive(Default)]
+struct RouteState {
+    /// Fallback route activated by a connection-level failure, with its expiry.
+    fallback: Option<(OutboundRoute, std::time::Instant)>,
+}
+
 #[derive(Clone)]
 pub struct NetworkClients {
     store: Store,
     cache: Arc<RwLock<ClientCache>>,
+    route: Arc<RwLock<RouteState>>,
 }
 
 #[derive(Default)]
@@ -29,6 +59,7 @@ impl NetworkClients {
         Self {
             store,
             cache: Arc::new(RwLock::new(ClientCache::default())),
+            route: Arc::new(RwLock::new(RouteState::default())),
         }
     }
 
@@ -40,7 +71,8 @@ impl NetworkClients {
         if let Some(client) = cache.default.clone() {
             return Ok(client);
         }
-        let client = client_builder(&self.store).await?.build()?;
+        let route = self.resolved_route().await?;
+        let client = client_builder_for_route(route)?.build()?;
         cache.default = Some(client.clone());
         Ok(client)
     }
@@ -53,8 +85,8 @@ impl NetworkClients {
         if let Some(client) = cache.cursor.clone() {
             return Ok(client);
         }
-        let client = client_builder(&self.store)
-            .await?
+        let route = self.resolved_route().await?;
+        let client = client_builder_for_route(route)?
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
         cache.cursor = Some(client.clone());
@@ -80,12 +112,56 @@ impl NetworkClients {
         {
             return Ok(client.clone());
         }
-        let client = client_builder(&self.store)
-            .await?
-            .timeout(timeout)
-            .build()?;
+        let route = self.resolved_route().await?;
+        let client = client_builder_for_route(route)?.timeout(timeout).build()?;
         cache.provider = Some((timeout, client.clone()));
         Ok(client)
+    }
+
+    /// The route outbound requests currently take: the persisted primary route,
+    /// or the fallback route activated by a recent connection-level failure.
+    async fn resolved_route(&self) -> Result<OutboundRoute> {
+        let settings = self.store.proxy_settings_secret().await?;
+        let expired = {
+            let mut state = self.route.write().await;
+            let expired = state
+                .fallback
+                .as_ref()
+                .is_some_and(|(_, until)| std::time::Instant::now() >= *until);
+            if expired {
+                state.fallback = None;
+            }
+            expired
+        };
+        if expired {
+            // Rebuild the clients so the next request probes the primary route.
+            self.invalidate().await;
+        }
+        let state = self.route.read().await;
+        if let Some((route, _)) = state.fallback.as_ref() {
+            return Ok(route.clone());
+        }
+        Ok(primary_route(&settings))
+    }
+
+    /// Activates the alternate route after a connection-level outbound failure.
+    /// A no-op when the fallback is already active (both known routes failing)
+    /// or when no alternate route exists for the current settings.
+    pub async fn report_outbound_failure(&self) -> Result<()> {
+        let settings = self.store.proxy_settings_secret().await?;
+        let mut state = self.route.write().await;
+        if state.fallback.is_some() {
+            return Ok(());
+        }
+        let primary = primary_route(&settings);
+        let Some(alternate) = alternate_route(&primary, &settings) else {
+            return Ok(());
+        };
+        state.fallback = Some((alternate, std::time::Instant::now() + FALLBACK_ROUTE_TTL));
+        drop(state);
+        self.invalidate().await;
+        tracing::warn!("outbound failure switched routes; subsequent requests take the fallback");
+        Ok(())
     }
 
     pub async fn invalidate(&self) {
@@ -93,15 +169,77 @@ impl NetworkClients {
     }
 }
 
-pub async fn client_builder(store: &Store) -> Result<reqwest::ClientBuilder> {
-    let settings = store.proxy_settings_secret().await?;
+fn primary_route(settings: &ProxySettingsSecret) -> OutboundRoute {
+    match settings.mode {
+        ProxyMode::Custom if !settings.address.is_empty() => OutboundRoute::Proxy(ProxyRoute {
+            address: settings.address.clone(),
+            auth_enabled: settings.auth_enabled,
+            username: settings.username.clone(),
+            password: settings.password.clone(),
+        }),
+        ProxyMode::System => system_proxy_route().unwrap_or(OutboundRoute::Direct),
+        _ => OutboundRoute::Direct,
+    }
+}
+
+/// The route to try when the primary route fails at the connection level.
+fn alternate_route(
+    primary: &OutboundRoute,
+    settings: &ProxySettingsSecret,
+) -> Option<OutboundRoute> {
+    match primary {
+        OutboundRoute::Proxy(_) => Some(OutboundRoute::Direct),
+        OutboundRoute::Direct => match settings.mode {
+            ProxyMode::Custom if !settings.address.is_empty() => {
+                Some(OutboundRoute::Proxy(ProxyRoute {
+                    address: settings.address.clone(),
+                    auth_enabled: settings.auth_enabled,
+                    username: settings.username.clone(),
+                    password: settings.password.clone(),
+                }))
+            }
+            _ => system_proxy_route(),
+        },
+    }
+}
+
+/// The proxy configured at the operating system level, when enabled.
+fn system_proxy_route() -> Option<OutboundRoute> {
+    let proxy = sysproxy::Sysproxy::get_system_proxy().ok()?;
+    if !proxy.enable || proxy.host.is_empty() || proxy.port == 0 {
+        return None;
+    }
+    Some(OutboundRoute::Proxy(ProxyRoute {
+        address: format!("http://{}:{}", proxy.host.trim(), proxy.port),
+        auth_enabled: false,
+        username: String::new(),
+        password: String::new(),
+    }))
+}
+
+fn proxy_from_route(route: &ProxyRoute) -> Result<reqwest::Proxy> {
+    let mut proxy = reqwest::Proxy::all(&route.address)?
+        .no_proxy(reqwest::NoProxy::from_string(LOCAL_NO_PROXY));
+    if route.auth_enabled {
+        proxy = proxy.basic_auth(&route.username, &route.password);
+    }
+    Ok(proxy)
+}
+
+fn client_builder_for_route(route: OutboundRoute) -> Result<reqwest::ClientBuilder> {
     // Use the platform TLS stack for compatibility with provider gateways that
     // only offer legacy TLS 1.2 cipher suites unsupported by rustls.
     let mut builder = reqwest::Client::builder().use_native_tls();
-    if settings.mode.is_custom() {
-        builder = builder.proxy(custom_proxy(&settings)?);
+    if let OutboundRoute::Proxy(proxy) = route {
+        builder = builder.proxy(proxy_from_route(&proxy)?);
     }
     Ok(builder)
+}
+
+/// Builds a client that always takes the primary route (no runtime fallback).
+pub async fn client_builder(store: &Store) -> Result<reqwest::ClientBuilder> {
+    let settings = store.proxy_settings_secret().await?;
+    client_builder_for_route(primary_route(&settings))
 }
 
 pub async fn client(store: &Store) -> Result<reqwest::Client> {
@@ -111,19 +249,10 @@ pub async fn client(store: &Store) -> Result<reqwest::Client> {
 pub async fn blocking_client_builder(store: &Store) -> Result<reqwest::blocking::ClientBuilder> {
     let settings = store.proxy_settings_secret().await?;
     let mut builder = reqwest::blocking::Client::builder().use_native_tls();
-    if settings.mode.is_custom() {
-        builder = builder.proxy(custom_proxy(&settings)?);
+    if let OutboundRoute::Proxy(proxy) = primary_route(&settings) {
+        builder = builder.proxy(proxy_from_route(&proxy)?);
     }
     Ok(builder)
-}
-
-fn custom_proxy(settings: &ProxySettingsSecret) -> Result<reqwest::Proxy> {
-    let mut proxy = reqwest::Proxy::all(&settings.address)?
-        .no_proxy(reqwest::NoProxy::from_string(LOCAL_NO_PROXY));
-    if settings.auth_enabled {
-        proxy = proxy.basic_auth(&settings.username, &settings.password);
-    }
-    Ok(proxy)
 }
 
 pub fn reject_self_proxy(address: &str, local_proxy_port: u16) -> Result<()> {
@@ -200,7 +329,15 @@ mod tests {
         });
         let settings = custom_settings(format!("http://{proxy_address}"));
         let client = reqwest::Client::builder()
-            .proxy(custom_proxy(&settings).unwrap())
+            .proxy(
+                proxy_from_route(&ProxyRoute {
+                    address: settings.address.clone(),
+                    auth_enabled: false,
+                    username: String::new(),
+                    password: String::new(),
+                })
+                .unwrap(),
+            )
             .build()
             .unwrap();
 
@@ -221,5 +358,94 @@ mod tests {
                 .is_err(),
             "loopback destination unexpectedly reached the configured proxy"
         );
+    }
+
+    #[test]
+    fn primary_route_follows_the_selected_mode() {
+        let direct = ProxySettingsSecret {
+            mode: ProxyMode::Default,
+            address: String::new(),
+            auth_enabled: false,
+            username: String::new(),
+            password: String::new(),
+        };
+        assert_eq!(primary_route(&direct), OutboundRoute::Direct);
+
+        let custom = custom_settings("http://127.0.0.1:7890".into());
+        let primary = primary_route(&custom);
+        let OutboundRoute::Proxy(ref proxy) = primary else {
+            panic!("custom mode must resolve to a proxy route");
+        };
+        assert_eq!(proxy.address, "http://127.0.0.1:7890");
+
+        // A proxy primary always falls back to direct; a direct primary with a
+        // configured custom address falls back to that proxy.
+        assert_eq!(
+            alternate_route(&primary, &custom),
+            Some(OutboundRoute::Direct)
+        );
+        assert_eq!(
+            alternate_route(&OutboundRoute::Direct, &custom),
+            Some(primary)
+        );
+    }
+
+    #[tokio::test]
+    async fn failure_flips_to_the_alternate_route_and_stays_until_expiry() {
+        let directory = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", directory.path().join("test.db").display());
+        let store = Store::connect(&url).await.unwrap();
+        store
+            .set_proxy_settings(crate::store::ProxySettingsInput {
+                mode: ProxyMode::Custom,
+                address: "http://127.0.0.1:7890".into(),
+                auth_enabled: false,
+                username: String::new(),
+                password: None,
+            })
+            .await
+            .unwrap();
+        let clients = NetworkClients::new(store);
+        let _ = clients.default_client().await.unwrap();
+
+        clients.report_outbound_failure().await.unwrap();
+        {
+            let state = clients.route.read().await;
+            assert_eq!(
+                state.fallback.as_ref().map(|(route, _)| route),
+                Some(&OutboundRoute::Direct),
+                "a failing proxy primary must fall back to direct"
+            );
+        }
+
+        // While the fallback is active, further failures must not flip again.
+        clients.report_outbound_failure().await.unwrap();
+        let state = clients.route.read().await;
+        assert_eq!(
+            state.fallback.as_ref().map(|(route, _)| route),
+            Some(&OutboundRoute::Direct),
+            "repeated failures must not churn the fallback route"
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_mode_failure_only_flips_when_a_system_proxy_exists() {
+        let directory = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", directory.path().join("test.db").display());
+        let store = Store::connect(&url).await.unwrap();
+        let clients = NetworkClients::new(store);
+
+        clients.report_outbound_failure().await.unwrap();
+        let state = clients.route.read().await;
+        match system_proxy_route() {
+            None => assert!(
+                state.fallback.is_none(),
+                "without a system proxy there is nothing to fall back to"
+            ),
+            Some(alternate) => assert_eq!(
+                state.fallback.as_ref().map(|(route, _)| route),
+                Some(&alternate)
+            ),
+        }
     }
 }

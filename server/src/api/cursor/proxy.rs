@@ -106,6 +106,9 @@ async fn forward_request(
     let upstream = match upstream {
         Ok(response) => response,
         Err(error) => {
+            if error.is_connect() || error.is_timeout() {
+                proxy.clients.report_outbound_failure().await.ok();
+            }
             tracing::error!(
                 method = %parts.method,
                 path,
@@ -159,14 +162,23 @@ pub async fn forward_buffered(
     let body = to_bytes(body, usize::MAX)
         .await
         .map_err(|error| crate::Error::Protocol(format!("cannot read request body: {error}")))?;
-    let upstream = proxy
+    let upstream = match proxy
         .client()
         .await?
         .request(parts.method, url)
         .headers(headers)
         .body(body)
         .send()
-        .await?;
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            if error.is_connect() || error.is_timeout() {
+                proxy.clients.report_outbound_failure().await.ok();
+            }
+            return Err(error.into());
+        }
+    };
     let status = upstream.status();
     let mut headers = upstream.headers().clone();
     remove_hop_by_hop_headers(&mut headers);

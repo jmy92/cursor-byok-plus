@@ -157,6 +157,9 @@ impl Provider for ProviderRouter {
                         yield event;
                     }
                     Err(error) => {
+                        if matches!(&error, crate::Error::Http(source) if source.is_connect()) {
+                            clients.report_outbound_failure().await.ok();
+                        }
                         let error = normalize_provider_stream_error(error, request_timeout);
                         tracing::debug!(
                             error = %error,

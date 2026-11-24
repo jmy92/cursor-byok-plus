@@ -57,11 +57,16 @@ pub enum ProxyMode {
     #[default]
     Default,
     Custom,
+    System,
 }
 
 impl ProxyMode {
     pub fn is_custom(self) -> bool {
         self == Self::Custom
+    }
+
+    pub fn is_system(self) -> bool {
+        self == Self::System
     }
 }
 
@@ -518,7 +523,7 @@ mod tests {
     /// The `outbound_proxy` row exactly as builds before the `system` -> `default`
     /// rename wrote it.
     const LEGACY_PROXY_ROW: &str =
-        r#"{"mode":"system","address":"","auth_enabled":false,"username":"","password":""}"#;
+        r#"{"mode":"turbo","address":"","auth_enabled":false,"username":"","password":""}"#;
 
     #[test]
     fn commit_prompt_locale_maps_unknown_interface_languages_to_english() {
@@ -577,7 +582,8 @@ mod tests {
             serde_json::from_str::<ProxyMode>("\"default\"").unwrap(),
             ProxyMode::Default
         );
-        assert!(serde_json::from_str::<ProxyMode>("\"system\"").is_err());
+        assert!(serde_json::from_str::<ProxyMode>("\"system\"").is_ok());
+        assert!(serde_json::from_str::<ProxyMode>("\"turbo\"").is_err());
     }
 
     #[test]
@@ -588,6 +594,15 @@ mod tests {
         assert_eq!(settings.mode, ProxyMode::Default);
         assert!(settings.address.is_empty());
         assert!(!settings.auth_enabled);
+    }
+
+    #[test]
+    fn the_legacy_system_value_is_a_supported_mode() {
+        let settings = read_proxy_settings(
+            r#"{"mode":"system","address":"","auth_enabled":false,"username":"","password":""}"#,
+        );
+        assert_eq!(settings.mode, ProxyMode::System);
+        assert!(settings.address.is_empty());
     }
 
     #[tokio::test]
