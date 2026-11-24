@@ -270,12 +270,17 @@ fn proxy_from_route(route: &ProxyRoute) -> Result<reqwest::Proxy> {
     Ok(proxy)
 }
 
-fn client_builder_for_route(route: OutboundRoute) -> Result<reqwest::ClientBuilder> {
+pub fn client_builder_for_route(route: OutboundRoute) -> Result<reqwest::ClientBuilder> {
     // Use the platform TLS stack for compatibility with provider gateways that
     // only offer legacy TLS 1.2 cipher suites unsupported by rustls.
     let mut builder = reqwest::Client::builder().use_native_tls();
-    if let OutboundRoute::Proxy(proxy) = route {
-        builder = builder.proxy(proxy_from_route(&proxy)?);
+    match route {
+        OutboundRoute::Proxy(proxy) => builder = builder.proxy(proxy_from_route(&proxy)?),
+        // A direct route must stay direct: without this, proxy environment
+        // variables (HTTP_PROXY/HTTPS_PROXY) silently hijack every outbound
+        // request — the installed app runs with whatever environment the OS
+        // shell has, and stale values there caused total outbound failure.
+        OutboundRoute::Direct => builder = builder.no_proxy(),
     }
     Ok(builder)
 }

@@ -354,6 +354,7 @@ fn build_inner(
         Some(client) => client,
         None => reqwest::Client::builder()
             .timeout(config.request_timeout)
+            .no_proxy()
             .build()?,
     };
     let provider: Arc<dyn Provider> = match config.kind {
