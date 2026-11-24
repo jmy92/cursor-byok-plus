@@ -18,6 +18,9 @@ const LOCAL_NO_PROXY: &str = "localhost,127.0.0.0/8,::1";
 /// How long a fallback route stays active before the primary route is probed again.
 const FALLBACK_ROUTE_TTL: Duration = Duration::from_secs(600);
 
+/// Minimum interval between client recycles triggered by persistent failures.
+const CLIENT_RECYCLE_INTERVAL: Duration = Duration::from_secs(60);
+
 /// A concrete outbound proxy endpoint with optional basic auth.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyRoute {
@@ -38,6 +41,8 @@ pub enum OutboundRoute {
 struct RouteState {
     /// Fallback route activated by a connection-level failure, with its expiry.
     fallback: Option<(OutboundRoute, std::time::Instant)>,
+    /// Last time the clients were recycled after a failure with no route to switch to.
+    last_recycle: Option<std::time::Instant>,
 }
 
 #[derive(Clone)]
@@ -145,28 +150,67 @@ impl NetworkClients {
     }
 
     /// Activates the alternate route after a connection-level outbound failure.
-    /// A no-op when the fallback is already active (both known routes failing)
-    /// or when no alternate route exists for the current settings.
+    ///
+    /// When no route switch is possible — the fallback is already active, or no
+    /// alternate route exists for the current settings — the outbound clients are
+    /// recycled (throttled by [`CLIENT_RECYCLE_INTERVAL`]) so later attempts start
+    /// with fresh connection pools instead of reusing the sockets that keep failing.
     pub async fn report_outbound_failure(&self) -> Result<()> {
         let settings = self.store.proxy_settings_secret().await?;
         let mut state = self.route.write().await;
+        let switched;
         if state.fallback.is_some() {
-            return Ok(());
+            // The fallback route is active and still failing.
+            switched = false;
+            if !recycle_due(&mut state) {
+                return Ok(());
+            }
+        } else {
+            let primary = primary_route(&settings);
+            match alternate_route(&primary, &settings) {
+                Some(alternate) => {
+                    state.fallback =
+                        Some((alternate, std::time::Instant::now() + FALLBACK_ROUTE_TTL));
+                    switched = true;
+                }
+                None => {
+                    // No alternate route exists for the current settings.
+                    switched = false;
+                    if !recycle_due(&mut state) {
+                        return Ok(());
+                    }
+                }
+            }
         }
-        let primary = primary_route(&settings);
-        let Some(alternate) = alternate_route(&primary, &settings) else {
-            return Ok(());
-        };
-        state.fallback = Some((alternate, std::time::Instant::now() + FALLBACK_ROUTE_TTL));
         drop(state);
         self.invalidate().await;
-        tracing::warn!("outbound failure switched routes; subsequent requests take the fallback");
+        if switched {
+            tracing::warn!(
+                "outbound failure switched routes; subsequent requests take the fallback"
+            );
+        } else {
+            tracing::warn!(
+                "outbound failure persists; recycled outbound clients for fresh connections"
+            );
+        }
         Ok(())
     }
 
     pub async fn invalidate(&self) {
         *self.cache.write().await = ClientCache::default();
     }
+}
+
+/// Whether enough time has passed to recycle the outbound clients again.
+fn recycle_due(state: &mut RouteState) -> bool {
+    if state
+        .last_recycle
+        .is_some_and(|at| at.elapsed() < CLIENT_RECYCLE_INTERVAL)
+    {
+        return false;
+    }
+    state.last_recycle = Some(std::time::Instant::now());
+    true
 }
 
 fn primary_route(settings: &ProxySettingsSecret) -> OutboundRoute {
@@ -297,6 +341,26 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn reqwest_classifies_a_refused_connection_as_a_connect_failure() {
+        // Bind then drop a listener to obtain a guaranteed-closed loopback port.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let client = reqwest::Client::builder().use_native_tls().build().unwrap();
+
+        let error = client
+            .get(format!("http://{address}"))
+            .send()
+            .await
+            .expect_err("a request to a closed port must fail");
+
+        assert!(
+            error.is_connect(),
+            "the failure hooks rely on is_connect(); got: {error}"
+        );
+    }
+
     #[test]
     fn rejects_only_own_loopback_proxy_port() {
         for address in [
@@ -419,12 +483,29 @@ mod tests {
         }
 
         // While the fallback is active, further failures must not flip again.
+        let _ = clients.default_client().await.unwrap();
         clients.report_outbound_failure().await.unwrap();
-        let state = clients.route.read().await;
-        assert_eq!(
-            state.fallback.as_ref().map(|(route, _)| route),
-            Some(&OutboundRoute::Direct),
-            "repeated failures must not churn the fallback route"
+        {
+            let state = clients.route.read().await;
+            assert_eq!(
+                state.fallback.as_ref().map(|(route, _)| route),
+                Some(&OutboundRoute::Direct),
+                "repeated failures must not churn the fallback route"
+            );
+        }
+
+        // The first failure on the fallback route recycles the clients.
+        assert!(
+            clients.cache.read().await.default.is_none(),
+            "a failure on the fallback route must recycle the clients"
+        );
+
+        // Recycling is throttled: a client rebuilt right after stays in place.
+        let _ = clients.default_client().await.unwrap();
+        clients.report_outbound_failure().await.unwrap();
+        assert!(
+            clients.cache.read().await.default.is_some(),
+            "recycles must be throttled by the recycle interval"
         );
     }
 
@@ -434,18 +515,29 @@ mod tests {
         let url = format!("sqlite://{}", directory.path().join("test.db").display());
         let store = Store::connect(&url).await.unwrap();
         let clients = NetworkClients::new(store);
+        let _ = clients.default_client().await.unwrap();
 
         clients.report_outbound_failure().await.unwrap();
-        let state = clients.route.read().await;
         match system_proxy_route() {
-            None => assert!(
-                state.fallback.is_none(),
-                "without a system proxy there is nothing to fall back to"
-            ),
-            Some(alternate) => assert_eq!(
-                state.fallback.as_ref().map(|(route, _)| route),
-                Some(&alternate)
-            ),
+            None => {
+                let state = clients.route.read().await;
+                assert!(
+                    state.fallback.is_none(),
+                    "without a system proxy there is nothing to fall back to"
+                );
+                drop(state);
+                assert!(
+                    clients.cache.read().await.default.is_none(),
+                    "with no alternate route the clients must still be recycled"
+                );
+            }
+            Some(alternate) => {
+                let state = clients.route.read().await;
+                assert_eq!(
+                    state.fallback.as_ref().map(|(route, _)| route),
+                    Some(&alternate)
+                );
+            }
         }
     }
 }
