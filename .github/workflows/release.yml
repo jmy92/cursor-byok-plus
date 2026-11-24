@@ -144,29 +144,13 @@ jobs:
           tagName: v__VERSION__
           releaseName: Cursor BYOK v__VERSION__
           releaseBody: |
-            社区维护版（jmy92/cursor-byok-plus），本版本新增 **出站网络弹性**，复杂网络环境下的连接稳定性大幅提升。
-
-            ### 新增
-
-            - **跟随系统代理**：出站代理新增"跟随系统代理"选项，自动读取操作系统的代理设置（Windows 注册表 / macOS / Linux）
-            - **连接失败自动回落**：任一出站请求发生连接级失败时，自动切换到备用路由（直连 ↔ 代理），10 分钟后自动试回主路由——开机时代理未就绪、代理中途断开等场景不再持续报错
-            - Cursor 官方请求与 BYOK 模型调用均受益于上述回落
-
-            ### 调整
-
-            - 界面"使用教程"入口改为指向本仓库
-            - README 移除品牌横幅图
-
-            ### 使用说明
+            社区维护版（jmy92/cursor-byok-plus），本版本新增 出站网络弹性，复杂网络环境下的连接稳定性大幅提升。
 
             - 按平台下载：Windows（NSIS 安装包）/ macOS（更新包）/ Linux（AppImage、deb、rpm）
-            - v1.0.2 及以上版本可直接通过应用内更新升级到本版本，macOS 未做公证签名，首次打开请右键 → 打开
+            - v1.0.2 及以上版本可直接通过应用内更新升级到本版本
+            - macOS 未做公证签名，首次打开请右键 → 打开
 
-            ### 实测与反馈
-
-            实测验证 Windows 系统下 Cursor 3.31+ 稳健使用。遇到问题欢迎提 Issue（请附 Cursor 版本、模型类型与请求协议）。
-
-            **Full Changelog**: https://github.com/jmy92/cursor-byok-plus/compare/31e9f5c...v${{ needs.prepare.outputs.version }}
+            实测验证windows系统下 Cursor3.31+ 稳健使用
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
