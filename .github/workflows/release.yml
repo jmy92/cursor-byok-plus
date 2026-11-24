@@ -144,7 +144,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: Cursor BYOK v__VERSION__
           releaseBody: |
-            社区维护版（jmy92/cursor-byok-plus），本版本新增 **出站网络弹性**，代理环境下的连接稳定性大幅提升。
+            社区维护版（jmy92/cursor-byok-plus），本版本新增 **出站网络弹性**，复杂网络环境下的连接稳定性大幅提升。
 
             ### 新增
 
@@ -160,12 +160,11 @@ jobs:
             ### 使用说明
 
             - 按平台下载：Windows（NSIS 安装包）/ macOS（更新包）/ Linux（AppImage、deb、rpm）
-            - v1.0.2 及以上版本可直接通过应用内更新升级到本版本
-            - macOS 未做公证签名，首次打开请右键 → 打开
+            - v1.0.2 及以上版本可直接通过应用内更新升级到本版本，macOS 未做公证签名，首次打开请右键 → 打开
 
             ### 实测与反馈
 
-            Windows + Cursor 3.30.8：对话、工具调用正常。遇到问题欢迎提 Issue（请附 Cursor 版本、模型类型与请求协议）。
+            实测验证 Windows 系统下 Cursor 3.31+ 稳健使用。遇到问题欢迎提 Issue（请附 Cursor 版本、模型类型与请求协议）。
 
             **Full Changelog**: https://github.com/jmy92/cursor-byok-plus/compare/31e9f5c...v${{ needs.prepare.outputs.version }}
           releaseDraft: true
