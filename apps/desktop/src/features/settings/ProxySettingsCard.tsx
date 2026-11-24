@@ -26,7 +26,8 @@ export function ProxySettingsCard({
   onSave: () => void;
 }) {
   const custom = draft.mode === "custom";
-  const modeLabel = (mode: ProxySettingsInput["mode"]) => mode === "default" ? t("默认") : t("自定义");
+  const modeLabel = (mode: ProxySettingsInput["mode"]) =>
+    mode === "default" ? t("默认") : mode === "system" ? t("跟随系统代理") : t("自定义");
   const action = editing ? (
     <div className={styles.actionGroup}>
       <Button size="small" disabled={saving} onClick={onCancel}>{t("取消")}</Button>
@@ -43,7 +44,7 @@ export function ProxySettingsCard({
       {editing ? <>
         <div className={styles.row}>
           <strong>{t("代理方式")}</strong>
-          <div className={styles.control}><Select ariaLabel={t("代理方式")} value={draft.mode} options={[{ value: "default", label: t("默认") }, { value: "custom", label: t("自定义") }]} onChange={(mode) => onDraftChange({ ...draft, mode: mode as ProxySettingsInput["mode"] })} /></div>
+          <div className={styles.control}><Select ariaLabel={t("代理方式")} value={draft.mode} options={[{ value: "default", label: t("默认") }, { value: "custom", label: t("自定义") }, { value: "system", label: t("跟随系统代理") }]} onChange={(mode) => onDraftChange({ ...draft, mode: mode as ProxySettingsInput["mode"] })} /></div>
         </div>
         {custom && <div className={styles.customFields}>
           <div className={styles.row}>
