@@ -25,7 +25,7 @@ type MenuItem =
 
 const keptAlivePages = ["/", "/calls", "/settings", "/harness/cursor", "/plugins"];
 const tutorialReadStorageKey = "cursor-byok:tutorial-read";
-const tutorialUrl = "https://docs.leokun.cn";
+const tutorialUrl = "https://github.com/jmy92/cursor-byok-plus";
 
 export function AppLayout() {
   const { busy, cursorHarness } = useAppStore();
